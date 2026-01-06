@@ -1,0 +1,267 @@
+# Docker Compose for Local Development
+# Run: docker-compose -f docker-compose.yml up -d
+
+version: '3.8'
+
+services:
+  #############################################
+  # Infrastructure Services
+  #############################################
+  
+  postgres:
+    image: postgres:16-alpine
+    container_name: vurksha-postgres
+    environment:
+      POSTGRES_USER: vurksha
+      POSTGRES_PASSWORD: vurksha_dev_password
+      POSTGRES_DB: vurksha
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-databases.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vurksha"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: vurksha-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: vurksha-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: vurksha
+      RABBITMQ_DEFAULT_PASS: vurksha_dev_password
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  #############################################
+  # Observability Stack
+  #############################################
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: vurksha-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: vurksha-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.52
+    container_name: vurksha-jaeger
+    ports:
+      - "16686:16686" # UI
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:2.9.3
+    container_name: vurksha-loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
+  #############################################
+  # API Gateway
+  #############################################
+
+  kong:
+    image: kong:3.5
+    container_name: vurksha-kong
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+    ports:
+      - "8000:8000"   # Proxy
+      - "8001:8001"   # Admin API
+      - "8443:8443"   # Proxy SSL
+    volumes:
+      - ./infra/kong/kong.yml:/kong/kong.yml
+    depends_on:
+      - user-service
+      - product-service
+      - order-service
+      - cart-service
+      - notification-service
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  #############################################
+  # Application Services
+  #############################################
+
+  user-service:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    container_name: vurksha-user-service
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgresql://vurksha:vurksha_dev_password@postgres:5432/vurksha_users
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://vurksha:vurksha_dev_password@rabbitmq:5672
+      JWT_SECRET: dev-jwt-secret-change-in-production
+      OTP_ENABLED: "false"
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  product-service:
+    build:
+      context: ./services/product-service
+      dockerfile: Dockerfile
+    container_name: vurksha-product-service
+    environment:
+      PORT: 3002
+      DATABASE_URL: postgresql://vurksha:vurksha_dev_password@postgres:5432/vurksha_products
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://vurksha:vurksha_dev_password@rabbitmq:5672
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  order-service:
+    build:
+      context: ./services/order-service
+      dockerfile: Dockerfile
+    container_name: vurksha-order-service
+    environment:
+      PORT: 3003
+      DATABASE_URL: postgresql://vurksha:vurksha_dev_password@postgres:5432/vurksha_orders
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://vurksha:vurksha_dev_password@rabbitmq:5672
+      JWT_SECRET: dev-jwt-secret-change-in-production
+    ports:
+      - "3003:3003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  cart-service:
+    build:
+      context: ./services/cart-service
+      dockerfile: Dockerfile
+    container_name: vurksha-cart-service
+    environment:
+      PORT: 3004
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://vurksha:vurksha_dev_password@rabbitmq:5672
+      JWT_SECRET: dev-jwt-secret-change-in-production
+      PRODUCT_SERVICE_URL: http://product-service:3002
+    ports:
+      - "3004:3004"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: vurksha-notification-service
+    environment:
+      PORT: 3005
+      DATABASE_URL: postgresql://vurksha:vurksha_dev_password@postgres:5432/vurksha_notifications
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://vurksha:vurksha_dev_password@rabbitmq:5672
+      JWT_SECRET: dev-jwt-secret-change-in-production
+    ports:
+      - "3005:3005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  default:
+    name: vurksha-network

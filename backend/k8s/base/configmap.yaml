@@ -1,0 +1,28 @@
+# Kubernetes ConfigMap for shared configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shared-config
+  namespace: vurksha
+data:
+  # Service URLs (for internal communication)
+  USER_SERVICE_URL: "http://user-service:3001"
+  PRODUCT_SERVICE_URL: "http://product-service:3002"
+  ORDER_SERVICE_URL: "http://order-service:3003"
+  CART_SERVICE_URL: "http://cart-service:3004"
+  NOTIFICATION_SERVICE_URL: "http://notification-service:3005"
+  
+  # Redis
+  REDIS_URL: "redis://redis-cluster:6379"
+  
+  # RabbitMQ
+  RABBITMQ_URL: "amqp://rabbitmq:5672"
+  
+  # Logging
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  
+  # Observability
+  PROMETHEUS_ENABLED: "true"
+  JAEGER_ENABLED: "true"
+  JAEGER_ENDPOINT: "http://jaeger-collector:4317"

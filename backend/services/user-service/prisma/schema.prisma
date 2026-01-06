@@ -1,0 +1,166 @@
+// Prisma Schema for User Service
+// Each service owns its own database - this is the user_service_db schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// User entity - core user information
+model User {
+  id              String    @id @default(uuid())
+  phoneNumber     String    @unique @map("phone_number")
+  email           String?   @unique
+  name            String?
+  profileImageUrl String?   @map("profile_image_url")
+  isActive        Boolean   @default(true) @map("is_active")
+  isVerified      Boolean   @default(false) @map("is_verified")
+  role            UserRole  @default(CUSTOMER)
+  
+  // Timestamps
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  lastLoginAt     DateTime? @map("last_login_at")
+  
+  // Relations
+  addresses       Address[]
+  sessions        Session[]
+  otpCodes        OTPCode[]
+  
+  @@index([phoneNumber])
+  @@index([email])
+  @@index([createdAt])
+  @@map("users")
+}
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+  DELIVERY_PARTNER
+  SUPPORT
+}
+
+/// Delivery addresses for users
+model Address {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  
+  // Address details
+  label           String    @default("Home") // Home, Work, Other
+  fullName        String    @map("full_name")
+  phoneNumber     String    @map("phone_number")
+  addressLine1    String    @map("address_line_1")
+  addressLine2    String?   @map("address_line_2")
+  landmark        String?
+  city            String
+  state           String
+  pincode         String
+  country         String    @default("India")
+  
+  // Geolocation for delivery optimization
+  latitude        Float?
+  longitude       Float?
+  
+  // Flags
+  isDefault       Boolean   @default(false) @map("is_default")
+  isActive        Boolean   @default(true) @map("is_active")
+  
+  // Timestamps
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([pincode])
+  @@map("addresses")
+}
+
+/// User sessions for JWT token management
+model Session {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  
+  // Token info
+  refreshToken    String    @unique @map("refresh_token")
+  deviceId        String?   @map("device_id")
+  deviceName      String?   @map("device_name")
+  deviceType      String?   @map("device_type") // ios, android, web
+  ipAddress       String?   @map("ip_address")
+  userAgent       String?   @map("user_agent")
+  
+  // Validity
+  expiresAt       DateTime  @map("expires_at")
+  isRevoked       Boolean   @default(false) @map("is_revoked")
+  revokedAt       DateTime? @map("revoked_at")
+  
+  // Timestamps
+  createdAt       DateTime  @default(now()) @map("created_at")
+  lastUsedAt      DateTime  @default(now()) @map("last_used_at")
+  
+  // Relations
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([refreshToken])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// OTP codes for phone verification
+model OTPCode {
+  id              String    @id @default(uuid())
+  userId          String?   @map("user_id")
+  phoneNumber     String    @map("phone_number")
+  
+  // OTP details
+  code            String    // Hashed OTP
+  purpose         OTPPurpose
+  attempts        Int       @default(0)
+  maxAttempts     Int       @default(3) @map("max_attempts")
+  
+  // Validity
+  expiresAt       DateTime  @map("expires_at")
+  isUsed          Boolean   @default(false) @map("is_used")
+  usedAt          DateTime? @map("used_at")
+  
+  // Timestamps
+  createdAt       DateTime  @default(now()) @map("created_at")
+  
+  // Relations
+  user            User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([phoneNumber, purpose])
+  @@index([expiresAt])
+  @@map("otp_codes")
+}
+
+enum OTPPurpose {
+  LOGIN
+  REGISTRATION
+  PASSWORD_RESET
+  PHONE_CHANGE
+}
+
+/// Idempotency keys for safe retries
+model IdempotencyKey {
+  id              String    @id @default(uuid())
+  key             String    @unique
+  
+  // Stored response
+  statusCode      Int       @map("status_code")
+  responseBody    Json      @map("response_body")
+  
+  // Timestamps
+  createdAt       DateTime  @default(now()) @map("created_at")
+  expiresAt       DateTime  @map("expires_at")
+  
+  @@index([key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}

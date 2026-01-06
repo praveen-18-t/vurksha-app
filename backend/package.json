@@ -1,0 +1,36 @@
+{
+  "name": "@vurksha/backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vurksha Farm Delivery Backend - Microservices",
+  "workspaces": [
+    "services/*"
+  ],
+  "scripts": {
+    "dev:user": "pnpm --filter @vurksha/user-service dev",
+    "dev:product": "pnpm --filter @vurksha/product-service dev",
+    "dev:order": "pnpm --filter @vurksha/order-service dev",
+    "dev:cart": "pnpm --filter @vurksha/cart-service dev",
+    "dev:notification": "pnpm --filter @vurksha/notification-service dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "prisma:generate": "pnpm -r prisma:generate",
+    "prisma:migrate": "pnpm -r prisma:migrate",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.3",
+    "eslint": "^8.55.0",
+    "prettier": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.12.0"
+}

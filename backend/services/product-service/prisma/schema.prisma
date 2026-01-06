@@ -1,0 +1,224 @@
+// Prisma Schema for Product Service
+// Owns the product catalog and inventory
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Product category
+model Category {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  imageUrl    String?   @map("image_url")
+  parentId    String?   @map("parent_id")
+  sortOrder   Int       @default(0) @map("sort_order")
+  isActive    Boolean   @default(true) @map("is_active")
+  
+  // Timestamps
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  parent      Category?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    Category[]  @relation("CategoryHierarchy")
+  products    Product[]
+  
+  @@index([slug])
+  @@index([parentId])
+  @@map("categories")
+}
+
+/// Product entity
+model Product {
+  id                  String    @id @default(uuid())
+  
+  // Basic info
+  name                String
+  slug                String    @unique
+  description         String
+  shortDescription    String?   @map("short_description")
+  
+  // Categorization
+  categoryId          String    @map("category_id")
+  
+  // Pricing
+  price               Decimal   @db.Decimal(10, 2)
+  compareAtPrice      Decimal?  @db.Decimal(10, 2) @map("compare_at_price")
+  costPrice           Decimal?  @db.Decimal(10, 2) @map("cost_price")
+  
+  // Units
+  unit                String    @default("kg") // kg, piece, bunch, litre
+  minOrderQuantity    Int       @default(1) @map("min_order_quantity")
+  maxOrderQuantity    Int       @default(10) @map("max_order_quantity")
+  quantityStep        Decimal   @default(1) @db.Decimal(5, 2) @map("quantity_step")
+  
+  // Inventory
+  stock               Int       @default(0)
+  lowStockThreshold   Int       @default(10) @map("low_stock_threshold")
+  trackInventory      Boolean   @default(true) @map("track_inventory")
+  
+  // Attributes
+  isOrganic           Boolean   @default(false) @map("is_organic")
+  farmSource          String?   @map("farm_source")
+  shelfLife           String?   @map("shelf_life") // e.g., "3-5 days"
+  storageInstructions String?   @map("storage_instructions")
+  nutritionInfo       Json?     @map("nutrition_info")
+  
+  // SEO & Display
+  metaTitle           String?   @map("meta_title")
+  metaDescription     String?   @map("meta_description")
+  
+  // Status
+  isActive            Boolean   @default(true) @map("is_active")
+  isFeatured          Boolean   @default(false) @map("is_featured")
+  
+  // Stats
+  averageRating       Decimal   @default(0) @db.Decimal(3, 2) @map("average_rating")
+  reviewCount         Int       @default(0) @map("review_count")
+  salesCount          Int       @default(0) @map("sales_count")
+  
+  // Timestamps
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  category            Category  @relation(fields: [categoryId], references: [id])
+  images              ProductImage[]
+  tags                ProductTag[]
+  reviews             ProductReview[]
+  inventoryLogs       InventoryLog[]
+  
+  @@index([categoryId])
+  @@index([slug])
+  @@index([isActive, isFeatured])
+  @@index([createdAt])
+  @@map("products")
+}
+
+/// Product images
+model ProductImage {
+  id          String    @id @default(uuid())
+  productId   String    @map("product_id")
+  url         String
+  altText     String?   @map("alt_text")
+  sortOrder   Int       @default(0) @map("sort_order")
+  isPrimary   Boolean   @default(false) @map("is_primary")
+  
+  // Timestamps
+  createdAt   DateTime  @default(now()) @map("created_at")
+  
+  // Relations
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  @@index([productId])
+  @@map("product_images")
+}
+
+/// Product tags for filtering
+model ProductTag {
+  id          String    @id @default(uuid())
+  productId   String    @map("product_id")
+  name        String
+  
+  // Relations
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  @@unique([productId, name])
+  @@index([name])
+  @@map("product_tags")
+}
+
+/// Product reviews
+model ProductReview {
+  id          String    @id @default(uuid())
+  productId   String    @map("product_id")
+  userId      String    @map("user_id") // Reference to user-service
+  
+  // Review content
+  rating      Int       // 1-5
+  title       String?
+  comment     String?
+  
+  // Status
+  isVerified  Boolean   @default(false) @map("is_verified") // Verified purchase
+  isApproved  Boolean   @default(false) @map("is_approved")
+  
+  // Timestamps
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  @@unique([productId, userId])
+  @@index([productId, isApproved])
+  @@map("product_reviews")
+}
+
+/// Inventory change log
+model InventoryLog {
+  id          String    @id @default(uuid())
+  productId   String    @map("product_id")
+  
+  // Change details
+  previousStock   Int   @map("previous_stock")
+  newStock        Int   @map("new_stock")
+  change          Int   // Can be negative
+  reason          InventoryChangeReason
+  referenceId     String?   @map("reference_id") // Order ID, adjustment ID, etc.
+  notes           String?
+  
+  // Actor
+  changedBy       String?   @map("changed_by") // User ID or 'system'
+  
+  // Timestamp
+  createdAt   DateTime  @default(now()) @map("created_at")
+  
+  // Relations
+  product     Product   @relation(fields: [productId], references: [id])
+  
+  @@index([productId])
+  @@index([createdAt])
+  @@map("inventory_logs")
+}
+
+enum InventoryChangeReason {
+  ORDER_PLACED
+  ORDER_CANCELLED
+  MANUAL_ADJUSTMENT
+  STOCK_RECEIVED
+  DAMAGED
+  EXPIRED
+  INITIAL_STOCK
+}
+
+/// Promotional banners
+model Banner {
+  id          String    @id @default(uuid())
+  title       String
+  subtitle    String?
+  imageUrl    String    @map("image_url")
+  linkType    String?   @map("link_type") // product, category, external
+  linkValue   String?   @map("link_value")
+  position    String    @default("home") // home, category, etc.
+  sortOrder   Int       @default(0) @map("sort_order")
+  isActive    Boolean   @default(true) @map("is_active")
+  
+  // Scheduling
+  startDate   DateTime? @map("start_date")
+  endDate     DateTime? @map("end_date")
+  
+  // Timestamps
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  
+  @@index([position, isActive])
+  @@map("banners")
+}

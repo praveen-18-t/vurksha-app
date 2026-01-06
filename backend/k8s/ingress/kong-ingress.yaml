@@ -1,0 +1,174 @@
+# Kong Ingress Controller
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong-proxy
+  namespace: vurksha
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app: kong
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+    - name: https
+      port: 443
+      targetPort: 8443
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong
+  namespace: vurksha
+  labels:
+    app: kong
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: kong
+  template:
+    metadata:
+      labels:
+        app: kong
+    spec:
+      containers:
+        - name: kong
+          image: kong:3.5
+          ports:
+            - containerPort: 8000
+              name: proxy
+            - containerPort: 8443
+              name: proxy-ssl
+            - containerPort: 8001
+              name: admin
+          env:
+            - name: KONG_DATABASE
+              value: "off"
+            - name: KONG_DECLARATIVE_CONFIG
+              value: "/kong/kong.yml"
+            - name: KONG_PROXY_ACCESS_LOG
+              value: "/dev/stdout"
+            - name: KONG_PROXY_ERROR_LOG
+              value: "/dev/stderr"
+            - name: KONG_ADMIN_LISTEN
+              value: "0.0.0.0:8001"
+          volumeMounts:
+            - name: kong-config
+              mountPath: /kong
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /status
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 30
+      volumes:
+        - name: kong-config
+          configMap:
+            name: kong-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-config
+  namespace: vurksha
+data:
+  kong.yml: |
+    _format_version: "3.0"
+    _transform: true
+    
+    services:
+      - name: user-service
+        url: http://user-service:3001
+        routes:
+          - name: user-routes
+            paths:
+              - /api/v1/auth
+              - /api/v1/users
+              - /api/v1/addresses
+            strip_path: false
+      
+      - name: product-service
+        url: http://product-service:3002
+        routes:
+          - name: product-routes
+            paths:
+              - /api/v1/products
+              - /api/v1/categories
+              - /api/v1/banners
+            strip_path: false
+      
+      - name: order-service
+        url: http://order-service:3003
+        routes:
+          - name: order-routes
+            paths:
+              - /api/v1/orders
+            strip_path: false
+      
+      - name: cart-service
+        url: http://cart-service:3004
+        routes:
+          - name: cart-routes
+            paths:
+              - /api/v1/cart
+            strip_path: false
+      
+      - name: notification-service
+        url: http://notification-service:3005
+        routes:
+          - name: notification-routes
+            paths:
+              - /api/v1/notifications
+            strip_path: false
+    
+    plugins:
+      - name: correlation-id
+        config:
+          header_name: X-Request-ID
+          generator: uuid
+          echo_downstream: true
+      
+      - name: rate-limiting
+        config:
+          second: 100
+          minute: 2000
+          policy: local
+          fault_tolerant: true
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kong-hpa
+  namespace: vurksha
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kong
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

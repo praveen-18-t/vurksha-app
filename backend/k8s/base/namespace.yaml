@@ -1,0 +1,8 @@
+# Kubernetes Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vurksha
+  labels:
+    app.kubernetes.io/name: vurksha
+    environment: production

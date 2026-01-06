@@ -1,0 +1,70 @@
+# Prometheus Configuration
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files: []
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Kong Gateway
+  - job_name: 'kong'
+    static_configs:
+      - targets: ['kong:8001']
+    metrics_path: /metrics
+
+  # User Service
+  - job_name: 'user-service'
+    static_configs:
+      - targets: ['user-service:3001']
+    metrics_path: /health/metrics
+
+  # Product Service
+  - job_name: 'product-service'
+    static_configs:
+      - targets: ['product-service:3002']
+    metrics_path: /health/metrics
+
+  # Order Service
+  - job_name: 'order-service'
+    static_configs:
+      - targets: ['order-service:3003']
+    metrics_path: /health/metrics
+
+  # Cart Service
+  - job_name: 'cart-service'
+    static_configs:
+      - targets: ['cart-service:3004']
+    metrics_path: /health/metrics
+
+  # Notification Service
+  - job_name: 'notification-service'
+    static_configs:
+      - targets: ['notification-service:3005']
+    metrics_path: /health/metrics
+
+  # PostgreSQL
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  # RabbitMQ
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq:15692']
+    metrics_path: /metrics

@@ -1,0 +1,200 @@
+// Prisma Schema for Order Service
+// Owns orders and payment records
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Order entity
+model Order {
+  id                  String        @id @default(uuid())
+  orderNumber         String        @unique @map("order_number") // Human-readable: VRK-2026-0001
+  
+  // Customer (reference to user-service)
+  userId              String        @map("user_id")
+  
+  // Delivery address (snapshot at order time)
+  deliveryAddress     Json          @map("delivery_address")
+  
+  // Status
+  status              OrderStatus   @default(PENDING)
+  
+  // Amounts
+  subtotal            Decimal       @db.Decimal(10, 2)
+  deliveryFee         Decimal       @db.Decimal(10, 2) @map("delivery_fee")
+  discount            Decimal       @default(0) @db.Decimal(10, 2)
+  tax                 Decimal       @default(0) @db.Decimal(10, 2)
+  total               Decimal       @db.Decimal(10, 2)
+  
+  // Coupon
+  couponCode          String?       @map("coupon_code")
+  couponDiscount      Decimal?      @db.Decimal(10, 2) @map("coupon_discount")
+  
+  // Payment
+  paymentStatus       PaymentStatus @default(PENDING) @map("payment_status")
+  paymentMethod       String?       @map("payment_method")
+  
+  // Delivery
+  scheduledDeliveryDate DateTime?   @map("scheduled_delivery_date")
+  actualDeliveryDate    DateTime?   @map("actual_delivery_date")
+  deliverySlot          String?     @map("delivery_slot") // "10:00-12:00"
+  deliveryInstructions  String?     @map("delivery_instructions")
+  
+  // Notes
+  customerNote        String?       @map("customer_note")
+  adminNote           String?       @map("admin_note")
+  
+  // Timestamps
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+  confirmedAt         DateTime?     @map("confirmed_at")
+  shippedAt           DateTime?     @map("shipped_at")
+  deliveredAt         DateTime?     @map("delivered_at")
+  cancelledAt         DateTime?     @map("cancelled_at")
+  
+  // Relations
+  items               OrderItem[]
+  events              OrderEvent[]
+  payment             Payment?
+  
+  @@index([userId])
+  @@index([status])
+  @@index([orderNumber])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+enum OrderStatus {
+  PENDING           // Just created, awaiting payment
+  CONFIRMED         // Payment confirmed, preparing
+  PROCESSING        // Being prepared
+  READY_FOR_PICKUP  // Ready for delivery partner
+  OUT_FOR_DELIVERY  // In transit
+  DELIVERED         // Successfully delivered
+  CANCELLED         // Cancelled by user or admin
+  REFUNDED          // Refund processed
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+/// Order line items
+model OrderItem {
+  id              String    @id @default(uuid())
+  orderId         String    @map("order_id")
+  
+  // Product snapshot (in case product changes later)
+  productId       String    @map("product_id")
+  productName     String    @map("product_name")
+  productImage    String?   @map("product_image")
+  
+  // Pricing
+  unitPrice       Decimal   @db.Decimal(10, 2) @map("unit_price")
+  quantity        Int
+  unit            String    @default("kg")
+  total           Decimal   @db.Decimal(10, 2)
+  
+  // Relations
+  order           Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  @@index([orderId])
+  @@map("order_items")
+}
+
+/// Order state change events (for audit trail)
+model OrderEvent {
+  id              String    @id @default(uuid())
+  orderId         String    @map("order_id")
+  
+  // Event details
+  eventType       String    @map("event_type")
+  previousStatus  OrderStatus? @map("previous_status")
+  newStatus       OrderStatus? @map("new_status")
+  
+  // Actor
+  actorType       String    @map("actor_type") // user, admin, system
+  actorId         String?   @map("actor_id")
+  
+  // Additional data
+  metadata        Json?
+  notes           String?
+  
+  // Timestamp
+  createdAt       DateTime  @default(now()) @map("created_at")
+  
+  // Relations
+  order           Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  @@index([orderId])
+  @@index([createdAt])
+  @@map("order_events")
+}
+
+/// Payment records
+model Payment {
+  id                  String        @id @default(uuid())
+  orderId             String        @unique @map("order_id")
+  
+  // Payment details
+  amount              Decimal       @db.Decimal(10, 2)
+  currency            String        @default("INR")
+  method              PaymentMethod
+  
+  // Gateway info
+  gatewayOrderId      String?       @map("gateway_order_id")
+  gatewayPaymentId    String?       @map("gateway_payment_id")
+  gatewaySignature    String?       @map("gateway_signature")
+  
+  // Status
+  status              PaymentStatus @default(PENDING)
+  failureReason       String?       @map("failure_reason")
+  
+  // Refund
+  refundedAmount      Decimal?      @db.Decimal(10, 2) @map("refunded_amount")
+  refundId            String?       @map("refund_id")
+  refundedAt          DateTime?     @map("refunded_at")
+  
+  // Timestamps
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+  completedAt         DateTime?     @map("completed_at")
+  
+  // Relations
+  order               Order         @relation(fields: [orderId], references: [id])
+  
+  @@index([gatewayPaymentId])
+  @@map("payments")
+}
+
+enum PaymentMethod {
+  COD           // Cash on delivery
+  UPI
+  CARD
+  NET_BANKING
+  WALLET
+}
+
+/// Idempotency keys for order creation
+model IdempotencyKey {
+  id              String    @id @default(uuid())
+  key             String    @unique
+  statusCode      Int       @map("status_code")
+  responseBody    Json      @map("response_body")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  expiresAt       DateTime  @map("expires_at")
+  
+  @@index([key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}

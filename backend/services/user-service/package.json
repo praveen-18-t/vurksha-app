@@ -1,0 +1,44 @@
+{
+  "name": "@vurksha/user-service",
+  "version": "1.0.0",
+  "description": "User authentication and profile management service",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src --ext .ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:prod": "prisma migrate deploy",
+    "prisma:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.7.0",
+    "@vurksha/shared": "workspace:*",
+    "fastify": "^4.25.0",
+    "fastify-plugin": "^4.5.1",
+    "@fastify/cors": "^8.4.2",
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/jwt": "^7.2.4",
+    "@fastify/rate-limit": "^9.1.0",
+    "ioredis": "^5.3.2",
+    "amqplib": "^0.10.3",
+    "pino": "^8.17.2",
+    "zod": "^3.22.4",
+    "uuid": "^9.0.1",
+    "bcrypt": "^5.1.1",
+    "twilio": "^4.20.0"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.4",
+    "@types/bcrypt": "^5.0.2",
+    "@types/node": "^20.10.0",
+    "@types/uuid": "^9.0.7",
+    "prisma": "^5.7.0",
+    "tsx": "^4.6.2",
+    "typescript": "^5.3.3"
+  }
+}
